@@ -167,11 +167,14 @@ class PrivateChannel(metaclass=abc.ABCMeta):
 class _Overwrites:
     __slots__ = ('id', 'allow', 'deny', 'type')
 
+    ROLE = 0
+    MEMBER = 1
+
     def __init__(self, **kwargs):
         self.id = kwargs.pop('id')
-        self.allow = int(kwargs.pop('allow_new', 0))
-        self.deny = int(kwargs.pop('deny_new', 0))
-        self.type = sys.intern(kwargs.pop('type'))
+        self.allow = int(kwargs.pop('allow', 0))
+        self.deny = int(kwargs.pop('deny', 0))
+        self.type = kwargs.pop('type')
 
     def _asdict(self):
         return {
@@ -180,6 +183,12 @@ class _Overwrites:
             'deny': str(self.deny),
             'type': self.type,
         }
+
+    def is_role(self) -> bool:
+        return self.type == 0
+
+    def is_member(self) -> bool:
+        return self.type == 1
 
 class GuildChannel:
     """An ABC that details the common operations on a Discord guild channel.
@@ -298,9 +307,9 @@ class GuildChannel:
                 }
 
                 if isinstance(target, Role):
-                    payload['type'] = 'role'
+                    payload['type'] = _Overwrites.ROLE
                 else:
-                    payload['type'] = 'member'
+                    payload['type'] = _Overwrites.MEMBER
 
                 perms.append(payload)
             options['permission_overwrites'] = perms
@@ -327,7 +336,7 @@ class GuildChannel:
             overridden_id = int(overridden.pop('id'))
             self._overwrites.append(_Overwrites(id=overridden_id, **overridden))
 
-            if overridden['type'] == 'member':
+            if overridden['type'] == _Overwrites.MEMBER:
                 continue
 
             if overridden_id == everyone_id:
@@ -349,7 +358,7 @@ class GuildChannel:
         their default values in the :attr:`~discord.Guild.roles` attribute."""
         ret = []
         g = self.guild
-        for overwrite in filter(lambda o: o.type == 'role', self._overwrites):
+        for overwrite in filter(lambda o: o.is_role(), self._overwrites):
             role = g.get_role(overwrite.id)
             if role is None:
                 continue
@@ -385,9 +394,9 @@ class GuildChannel:
         """
 
         if isinstance(obj, User):
-            predicate = lambda p: p.type == 'member'
+            predicate = lambda p: p.is_member()
         elif isinstance(obj, Role):
-            predicate = lambda p: p.type == 'role'
+            predicate = lambda p: p.is_role()
         else:
             predicate = lambda p: True
 
@@ -418,9 +427,9 @@ class GuildChannel:
             deny = Permissions(ow.deny)
             overwrite = PermissionOverwrite.from_pair(allow, deny)
 
-            if ow.type == 'role':
+            if ow.is_role():
                 target = self.guild.get_role(ow.id)
-            elif ow.type == 'member':
+            elif ow.is_member():
                 target = self.guild.get_member(ow.id)
 
             # TODO: There is potential data loss here in the non-chunked
@@ -522,7 +531,7 @@ class GuildChannel:
 
         # Apply channel specific role permission overwrites
         for overwrite in remaining_overwrites:
-            if overwrite.type == 'role' and roles.has(overwrite.id):
+            if overwrite.is_role() and roles.has(overwrite.id):
                 denies |= overwrite.deny
                 allows |= overwrite.allow
 
@@ -530,7 +539,7 @@ class GuildChannel:
 
         # Apply member specific permission overwrites
         for overwrite in remaining_overwrites:
-            if overwrite.type == 'member' and overwrite.id == member.id:
+            if overwrite.is_member() and overwrite.id == member.id:
                 base.handle_overwrite(allow=overwrite.allow, deny=overwrite.deny)
                 break
 
@@ -641,9 +650,9 @@ class GuildChannel:
         http = self._state.http
 
         if isinstance(target, User):
-            perm_type = 'member'
+            perm_type = _Overwrites.MEMBER
         elif isinstance(target, Role):
-            perm_type = 'role'
+            perm_type = _Overwrites.ROLE
         else:
             raise InvalidArgument('target parameter must be either Member or Role')
 

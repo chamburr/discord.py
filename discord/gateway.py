@@ -613,7 +613,7 @@ class DiscordWebSocket:
         payload = {
             'op': self.PRESENCE,
             'd': {
-                'game': activity,
+                'activities': [activity],
                 'afk': afk,
                 'since': since,
                 'status': status
